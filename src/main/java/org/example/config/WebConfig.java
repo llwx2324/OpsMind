@@ -12,8 +12,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * Web MVC 配置
- * 解决中文乱码问题
+ * Web MVC 配置。
+ *
+ * <p>主要解决 HTTP 消息的字符集问题，确保字符串与 JSON 的默认编码为 UTF-8，避免中文乱码。
+ * 该配置通过优先注册 StringHttpMessageConverter 与 MappingJackson2HttpMessageConverter 实现。</p>
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {

@@ -19,8 +19,10 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 向量嵌入服务
- * 使用阿里云 DashScope Text Embedding API
+ * 向量嵌入服务。
+ *
+ * <p>封装对阿里云 DashScope Text Embedding API 的调用，包括单条/批量文本的向量化、
+ * API Key 验证与结果类型转换等。该服务对调用方屏蔽底层 SDK 的细节，返回 List<Float> 作为向量表示。</p>
  */
 @Service
 public class VectorEmbeddingService {
@@ -59,19 +61,21 @@ public class VectorEmbeddingService {
         }
         
         logger.info("Constants.apiKey 已设置: {}", Constants.apiKey.substring(0, Math.min(8, Constants.apiKey.length())) + "...");
-        
+
         // 创建 TextEmbedding 实例
         textEmbedding = new TextEmbedding();
-        
+
         logger.info("阿里云 DashScope Embedding 服务初始化完成，模型: {}", model);
     }
 
     /**
-     * 生成向量嵌入
-     * 调用阿里云 DashScope Text Embedding API
-     * 
-     * @param content 文本内容
-     * @return 向量嵌入（浮点数列表）
+     * 生成单条文本的向量嵌入。
+     *
+     * <p>该方法会校验输入并确保 Constants.apiKey 已设置，然后调用 DashScope Embedding API。
+     * 若 API 返回异常或结果格式异常将抛出运行时异常，上层可捕获以进行重试或降级。</p>
+     *
+     * @param content 文本内容（不能为空）
+     * @return 向量嵌入（List<Float>）
      */
     public List<Float> generateEmbedding(String content) {
         try {
@@ -101,7 +105,7 @@ public class VectorEmbeddingService {
             // 调用 API
             TextEmbeddingResult result = textEmbedding.call(param);
 
-            // 检查结果
+            // 检查结果并转换为浮点列表
             List<Float> floatEmbedding = getFloats(result);
 
             logger.info("成功生成向量嵌入, 内容长度: {} 字符, 向量维度: {}", 
@@ -134,7 +138,7 @@ public class VectorEmbeddingService {
         // 获取第一个文本的向量
         List<Double> embeddingDoubles = embeddings.get(0).getEmbedding();
 
-        // 转换为 List<Float>
+        // 转换为 List<Float>：避免将 Double 直接暴露给上层，减少内存及序列化开销
         List<Float> floatEmbedding = new ArrayList<>(embeddingDoubles.size());
         for (Double value : embeddingDoubles) {
             floatEmbedding.add(value.floatValue());
@@ -143,10 +147,13 @@ public class VectorEmbeddingService {
     }
 
     /**
-     * 批量生成向量嵌入
-     * 
+     * 批量生成向量嵌入。
+     *
+     * <p>当需要对大量文本进行向量化时使用该方法，内部一次性发送批量请求以减少网络开销。
+     * 返回值的顺序与输入 texts 顺序一致。</p>
+     *
      * @param contents 文本内容列表
-     * @return 向量嵌入列表
+     * @return 对应的向量嵌入列表，发生错误时抛出运行时异常
      */
     public List<List<Float>> generateEmbeddings(List<String> contents) {
         try {
@@ -184,7 +191,7 @@ public class VectorEmbeddingService {
                 throw new RuntimeException("批量 DashScope API 返回空向量列表");
             }
 
-            // 转换结果
+            // 转换结果：将 Double 向量转换为 Float 向量以降低内存占用
             List<List<Float>> embeddings = new ArrayList<>();
             for (TextEmbeddingResultItem item : embeddingItems) {
                 List<Double> embeddingDoubles = item.getEmbedding();

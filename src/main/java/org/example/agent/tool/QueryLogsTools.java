@@ -1,8 +1,10 @@
 package org.example.agent.tool;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Data;
+import org.example.domain.po.LogEntry;
+import org.example.domain.vo.LogTopicInfo;
+import org.example.domain.vo.LogTopicsOutput;
+import org.example.domain.vo.QueryLogsOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -23,6 +25,8 @@ import java.util.Map;
  * 日志查询工具
  * 用于查询 CLS（云日志服务）的日志信息
  * 支持 Mock 模式，提供与告警关联的模拟日志数据
+ *
+ * 通过 Prometheus 查询到的活跃告警信息，查询对应服务的日志信息
  */
 @Component
 public class QueryLogsTools {
@@ -34,7 +38,8 @@ public class QueryLogsTools {
     public static final String TOOL_GET_AVAILABLE_LOG_TOPICS = "getAvailableLogTopics";
     
     private final ObjectMapper objectMapper = new ObjectMapper();
-    
+
+    // 是否启用 Mock 模式，默认 false
     @Value("${cls.mock-enabled:false}")
     private boolean mockEnabled;
     
@@ -131,15 +136,6 @@ public class QueryLogsTools {
         }
     }
     
-    /**
-     * 查询日志
-     * 从云日志服务查询指定条件的日志
-     * 
-     * @param region 地域，如 ap-guangzhou
-     * @param logTopic 日志主题，如 system-metrics, application-logs
-     * @param query 查询条件，如 level:ERROR OR cpu_usage:>80
-     * @param limit 返回的日志条数，默认20条
-     */
     // 有效地域列表
     private static final List<String> VALID_REGIONS = List.of(
             "ap-guangzhou", "ap-shanghai", "ap-beijing", "ap-chengdu"
@@ -158,12 +154,25 @@ public class QueryLogsTools {
             "logTopic (required, one of the above topics or their CLS topicId), " +
             "query (optional, defaults to a curated search if empty), " +
             "limit (optional, default 20, max 100).")
+    /**
+     * 查询日志。
+     *
+     * <p>该工具支持按地域、日志主题和查询条件检索 CLS 日志；在 Mock 模式下返回模拟数据，
+     * 在真实模式下当前仅预留入口并返回未实现提示。返回值为 JSON 字符串，供 Agent 直接消费。</p>
+     *
+     * @param region  地域，如 ap-guangzhou
+     * @param logTopic 日志主题，如 system-metrics、application-logs
+     * @param query   查询条件，如 level:ERROR OR cpu_usage:>80
+     * @param limit   返回的日志条数，默认 20 条
+     * @return JSON 字符串形式的查询结果
+     */
     public String queryLogs(
             @ToolParam(description = "地域，可选值: ap-guangzhou, ap-shanghai, ap-beijing, ap-chengdu。默认 ap-guangzhou") String region,
             @ToolParam(description = "日志主题，如 system-metrics, application-logs, database-slow-query, system-events，也支持 CLS TopicId") String logTopic,
             @ToolParam(description = "查询条件，支持 Lucene 语法，如 level:ERROR OR cpu_usage:>80；为空时返回该主题近 5 条核心日志") String query,
             @ToolParam(description = "返回日志条数，默认20，最大100") Integer limit) {
-        
+
+        // 实际返回日志条数限制，默认20，最大100
         int actualLimit = (limit == null || limit <= 0) ? 20 : Math.min(limit, 100);
         
         String safeQuery = query == null ? "" : query;
@@ -203,9 +212,15 @@ public class QueryLogsTools {
     }
 
     /**
-     * 构建 Mock 日志数据
-
-     * 根据日志主题和查询条件返回与告警关联的模拟数据
+     * 构建 Mock 日志数据。
+     *
+     * <p>根据日志主题和查询条件返回与告警关联的模拟数据，用于 Mock 环境下模拟不同业务场景的日志检索结果。</p>
+     *
+     * @param region   地域
+     * @param logTopic 日志主题
+     * @param query    查询条件
+     * @param limit    返回条数上限
+     * @return 模拟日志列表
      */
     private List<LogEntry> buildMockLogs(String region, String logTopic, String query, int limit) {
         List<LogEntry> logs = new ArrayList<>();
@@ -600,95 +615,5 @@ public class QueryLogsTools {
         }
     }
     
-    // ==================== 数据模型 ====================
-    
-    /**
-     * 日志条目
-     */
-    @Data
-    public static class LogEntry {
-        @JsonProperty("timestamp")
-        private String timestamp;
-        
-        @JsonProperty("level")
-        private String level;
-        
-        @JsonProperty("service")
-        private String service;
-        
-        @JsonProperty("instance")
-        private String instance;
-        
-        @JsonProperty("message")
-        private String message;
-        
-        @JsonProperty("metrics")
-        private Map<String, String> metrics;
-    }
-    
-    /**
-     * 日志查询输出
-     */
-    @Data
-    public static class QueryLogsOutput {
-        @JsonProperty("success")
-        private boolean success;
-        
-        @JsonProperty("region")
-        private String region;
-        
-        @JsonProperty("log_topic")
-        private String logTopic;
-        
-        @JsonProperty("query")
-        private String query;
-        
-        @JsonProperty("logs")
-        private List<LogEntry> logs;
-        
-        @JsonProperty("total")
-        private int total;
-        
-        @JsonProperty("message")
-        private String message;
-    }
-    
-    /**
-     * 日志主题信息
-     */
-    @Data
-    public static class LogTopicInfo {
-        @JsonProperty("topic_name")
-        private String topicName;
-        
-        @JsonProperty("description")
-        private String description;
-        
-        @JsonProperty("example_queries")
-        private List<String> exampleQueries;
-        
-        @JsonProperty("related_alerts")
-        private List<String> relatedAlerts;
-    }
-    
-    /**
-     * 日志主题列表输出
-     */
-    @Data
-    public static class LogTopicsOutput {
-        @JsonProperty("success")
-        private boolean success;
-        
-        @JsonProperty("topics")
-        private List<LogTopicInfo> topics;
-        
-        @JsonProperty("available_regions")
-        private List<String> availableRegions;
-        
-        @JsonProperty("default_region")
-        private String defaultRegion;
-        
-        @JsonProperty("message")
-        private String message;
-    }
+    // 数据模型已提取到 `org.example.domain.po` / `org.example.domain.vo`，此处保留工具实现逻辑即可。
 }

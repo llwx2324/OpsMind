@@ -45,14 +45,14 @@ public class AiOpsService {
      *
      * @param chatModel      大模型实例
      * @param toolCallbacks  工具回调数组
-     * @return 分析结果状态
+     * @return 分析结果状态，Optional 表示可能为空（如流程未能完成）
      * @throws GraphRunnerException 如果 Agent 执行失败
      */
     public Optional<OverAllState> executeAiOpsAnalysis(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) throws GraphRunnerException {
         logger.info("开始执行 AI Ops 多 Agent 协作流程");
 
         // 构建 Planner 和 Executor Agent
-        ReactAgent plannerAgent = buildPlannerAgent(chatModel, toolCallbacks);
+        ReactAgent plannerAgent = buildPlannerAgent(chatModel);
         ReactAgent executorAgent = buildExecutorAgent(chatModel, toolCallbacks);
 
         // 构建 Supervisor Agent
@@ -61,7 +61,7 @@ public class AiOpsService {
                 .description("负责调度 Planner 与 Executor 的多 Agent 控制器")
                 .model(chatModel)
                 .systemPrompt(buildSupervisorSystemPrompt())
-                .subAgents(List.of(plannerAgent, executorAgent))
+                .subAgents(List.of(plannerAgent, executorAgent)) // 注册子 Agent 供其调度
                 .build();
 
         String taskPrompt = "你是企业级 SRE，接到了自动化告警排查任务。请结合工具调用，执行**规划→执行→再规划**的闭环，并最终按照固定模板输出《告警分析报告》。禁止编造虚假数据，如连续多次查询失败需诚实反馈无法完成的原因。";
@@ -81,8 +81,8 @@ public class AiOpsService {
 
         // 提取 Planner 最终输出（包含完整的告警分析报告）
         Optional<AssistantMessage> plannerFinalOutput = state.value("planner_plan")
-                .filter(AssistantMessage.class::isInstance)
-                .map(AssistantMessage.class::cast);
+                .filter(AssistantMessage.class::isInstance) // 确保是 AssistantMessage 类型
+                .map(AssistantMessage.class::cast); // 转换为 AssistantMessage
 
         if (plannerFinalOutput.isPresent()) {
             String reportText = plannerFinalOutput.get().getText();
@@ -97,14 +97,14 @@ public class AiOpsService {
     /**
      * 构建 Planner Agent
      */
-    private ReactAgent buildPlannerAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
+    private ReactAgent buildPlannerAgent(DashScopeChatModel chatModel) {
         return ReactAgent.builder()
                 .name("planner_agent")
                 .description("负责拆解告警、规划与再规划步骤")
                 .model(chatModel)
-                .systemPrompt(buildPlannerPrompt())
-                .methodTools(buildMethodToolsArray())
-                .tools(toolCallbacks)
+//                .enableLogging(true)
+                .systemPrompt(buildPlannerSystemPrompt())
+                .instruction(buildPlannerInstruction())
                 .outputKey("planner_plan")
                 .build();
     }
@@ -117,7 +117,9 @@ public class AiOpsService {
                 .name("executor_agent")
                 .description("负责执行 Planner 的首个步骤并及时反馈")
                 .model(chatModel)
-                .systemPrompt(buildExecutorPrompt())
+//                .enableLogging(true)
+                .systemPrompt(buildExecutorSystemPrompt())
+                .instruction(buildExecutorInstruction())
                 .methodTools(buildMethodToolsArray())
                 .tools(toolCallbacks)
                 .outputKey("executor_feedback")
@@ -139,16 +141,20 @@ public class AiOpsService {
     }
 
     /**
-     * 构建 Planner Agent 系统提示词
+     * 构建 Planner Agent 系统提示词。
+     *
+     * <p>systemPrompt 不会被 Agent Framework 使用 OverAllState 渲染，因此这里不能放
+     * {input} / {executor_feedback} 这类状态占位符。</p>
      */
-    private String buildPlannerPrompt() {
+    String buildPlannerSystemPrompt() {
         return """
                 你是 Planner Agent，同时承担 Replanner 角色，负责：
-                1. 读取当前输入任务 {input} 以及 Executor 的最近反馈 {executor_feedback}。
-                2. 分析 Prometheus 告警、日志、内部文档等信息，制定可执行的下一步步骤。
-                3. 在执行阶段，输出 JSON，包含 decision (PLAN|EXECUTE|FINISH)、step 描述、预期要调用的工具、以及必要的上下文。
-                4. 调用任何腾讯云日志/主题相关工具时，region 参数必须使用连字符格式（如 ap-guangzhou），若不确定请省略以使用默认值。
-                5. 严格禁止编造数据，只能引用工具返回的真实内容；如果连续 3 次调用同一工具仍失败或返回空结果，需停止该方向并在最终报告的结论部分说明"无法完成"的原因。
+                1. 拆解当前运维任务，制定可执行的下一步步骤。
+                2. 根据 Executor 的最近反馈复盘和调整策略。
+                3. 只负责规划、再规划和最终报告生成，不直接调用监控、日志或文档查询工具。
+                4. 在执行阶段，输出 JSON，包含 decision (PLAN|EXECUTE|FINISH)、step 描述、预期要调用的工具、以及必要的上下文。
+                5. 调用任何腾讯云日志/主题相关工具时，region 参数必须使用连字符格式（如 ap-guangzhou），若不确定请省略以使用默认值。
+                6. 严格禁止编造数据，只能引用工具返回的真实内容；如果连续 3 次调用同一工具仍失败或返回空结果，需停止该方向并在最终报告的结论部分说明"无法完成"的原因。
                 
                 ## 最终报告输出要求（CRITICAL）
                 
@@ -236,11 +242,32 @@ public class AiOpsService {
     }
 
     /**
-     * 构建 Executor Agent 系统提示词
+     * 构建 Planner Agent 指令。
+     *
+     * <p>instruction 会作为 AgentInstructionMessage 写入消息列表，并由 Agent Framework
+     * 使用 OverAllState 渲染模板变量。</p>
      */
-    private String buildExecutorPrompt() {
+    String buildPlannerInstruction() {
         return """
-                你是 Executor Agent，负责读取 Planner 最新输出 {planner_plan}，只执行其中的第一步。
+                当前运维任务：
+
+                {input}
+
+                请结合消息历史中最近的 executor_feedback（如有）进行规划或再规划。
+
+                输出要求：
+                - 如果还需要查询告警、日志或内部文档，输出 JSON，字段包含 decision=EXECUTE、step、tools、context。
+                - 如果证据已经足够，输出 decision=FINISH，并直接生成完整 Markdown 格式《告警分析报告》。
+                - 不要自己调用工具；需要工具时只描述下一步，由 executor_agent 执行。
+                """;
+    }
+
+    /**
+     * 构建 Executor Agent 系统提示词。
+     */
+    String buildExecutorSystemPrompt() {
+        return """
+                你是 Executor Agent，负责执行 Planner 给出的首个步骤并及时反馈。
                 - 确认步骤所需的工具与参数，尤其是 region 参数要使用连字符格式（ap-guangzhou）；若 Planner 未给出则使用默认区域。
                 - 调用相应的工具并收集结果，如工具返回错误或空数据，需要将失败原因、请求参数一并记录，并停止进一步调用该工具（同一工具失败达到 3 次时应直接返回 FAILED）。
                 - 将日志、指标、文档等证据整理成结构化摘要，标注对应的告警名称或资源，方便 Planner 填充"告警根因分析 / 处理方案执行"章节。
@@ -254,6 +281,24 @@ public class AiOpsService {
                   "evidence": "...",
                   "nextHint": "建议转向高占用进程"
                 }
+                """;
+    }
+
+    /**
+     * 构建 Executor Agent 指令，读取 Planner 写入 OverAllState 的 planner_plan。
+     */
+    String buildExecutorInstruction() {
+        return """
+                Planner 最新输出如下：
+
+                {planner_plan}
+
+                请只执行 Planner 输出中的第一步。执行完成后，以 JSON 形式返回，字段包含：
+                - status: SUCCESS 或 FAILED
+                - executedStep: 实际执行的步骤
+                - evidence: 工具返回的证据摘要
+                - failedReason: 失败原因，成功时为空
+                - nextHint: 给 Planner 的下一步建议
                 """;
     }
 

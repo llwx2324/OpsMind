@@ -11,8 +11,10 @@ import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.PreDestroy;
 
 /**
- * Milvus 配置类
- * 负责创建和管理 MilvusServiceClient Bean
+ * Milvus 配置类。
+ *
+ * <p>负责创建 MilvusServiceClient Bean，并在应用关闭时释放该客户端资源。
+ * 将 Milvus 客户端托管为 Spring Bean 以便在整个应用中复用。</p>
  */
 @Configuration
 public class MilvusConfig {

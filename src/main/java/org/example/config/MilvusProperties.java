@@ -3,15 +3,43 @@ package org.example.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Milvus 连接配置。
+ *
+ * <p>绑定 application.yml 中的 milvus 前缀配置，用于控制连接地址、鉴权信息、数据库与超时时间。</p>
+ */
 @Configuration
 @ConfigurationProperties(prefix = "milvus")
 public class MilvusProperties {
 
+    /**
+     * Milvus host，默认 localhost
+     */
     private String host = "localhost";
+
+    /**
+     * Milvus port，默认 19530
+     */
     private Integer port = 19530;
+
+    /**
+     * 可选的连接用户名（若 Milvus 开启鉴权，则需要配置）
+     */
     private String username = "";
+
+    /**
+     * 可选的连接密码（若 Milvus 开启鉴权，则需要配置）
+     */
     private String password = "";
+
+    /**
+     * 目标数据库名，默认 default
+     */
     private String database = "default";
+
+    /**
+     * 连接超时时间（毫秒），默认 10000
+     */
     private Long timeout = 10000L;
 
     public String getHost() {

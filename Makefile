@@ -6,7 +6,7 @@ SERVER_URL = http://localhost:9900
 UPLOAD_API = $(SERVER_URL)/api/upload
 DOCS_DIR = aiops-docs
 HEALTH_CHECK_API = $(SERVER_URL)/milvus/health
-DOCKER_COMPOSE_FILE = vector-database.yml
+DOCKER_COMPOSE_FILE = docker-compose.yml
 MILVUS_CONTAINER = milvus-standalone
 
 # 颜色输出

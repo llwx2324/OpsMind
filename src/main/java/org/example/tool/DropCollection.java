@@ -8,11 +8,18 @@ import io.milvus.param.collection.DropCollectionParam;
 import io.milvus.param.collection.HasCollectionParam;
 
 /**
- * 删除 Milvus Collection 的工具类
- * 用于重建 Collection 时清理旧数据
+ * 删除 Milvus Collection 的工具类。
+ *
+ * <p>这是一个运维/开发辅助入口，用于删除旧 collection，使应用下次启动时重新创建 collection 及其 vector 字段索引结构。
+ * 由于会直接删除 Milvus 中的 collection 及其中所有向量记录，请仅在确认环境和数据可丢弃时使用。</p>
  */
 public class DropCollection {
     
+    /**
+     * 命令行入口：连接 Milvus、检查 collection 是否存在并按需删除。
+     *
+     * @param args 命令行参数（当前未使用）
+     */
     public static void main(String[] args) {
         MilvusServiceClient client = null;
         
@@ -59,7 +66,10 @@ public class DropCollection {
             
         } catch (Exception e) {
             System.err.println("错误: " + e.getMessage());
-            e.printStackTrace();
+            // 保留简单错误输出，避免在命令行工具中引入额外日志依赖。
+            for (StackTraceElement element : e.getStackTrace()) {
+                System.err.println("    at " + element);
+            }
         } finally {
             if (client != null) {
                 client.close();

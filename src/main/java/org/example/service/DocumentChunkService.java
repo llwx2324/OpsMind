@@ -1,7 +1,8 @@
 package org.example.service;
 
 import org.example.config.DocumentChunkConfig;
-import org.example.dto.DocumentChunk;
+import org.example.domain.po.DocumentChunk;
+import org.example.domain.po.DocumentSection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,24 +14,36 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 文档分片服务
- * 负责将长文档切分为多个有语义完整性的小片段
+ * 文档分片服务。
+ *
+ * <p>将长文档切分为多个语义上相对完整的片段，优先按 Markdown 标题分割，然后按段落边界划分，
+ * 并在分片之间保留重叠内容以便在检索或拼接时保留上下文连续性。</p>
+ *
+ * <p>设计要点：
+ * <ul>
+ *   <li>标题优先：保留章节语义边界，便于检索返回更具结构化的引用</li>
+ *   <li>段落分割：避免在句子中间进行切分，提升片段语义完整性</li>
+ *   <li>重叠策略：通过 overlap 保留上下文，改善跨片段检索时的上下文连贯性</li>
+ * </ul>
+ * </p>
  */
 @Service
 public class DocumentChunkService {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentChunkService.class);
 
+    /**
+     * 分片配置（最大分片大小、重叠长度等），通过配置类注入。
+     */
     @Autowired
     private DocumentChunkConfig chunkConfig;
 
     /**
-     * 智能分片文档
-     * 优先按照标题、段落边界进行分割，保持语义完整性
-     * 
-     * @param content 文档内容
-     * @param filePath 文件路径（用于日志）
-     * @return 文档分片列表
+     * 将文档内容切分为若干 DocumentChunk 列表。
+     *
+     * @param content  文档全文内容
+     * @param filePath 文件路径，仅用于日志及构建元数据
+     * @return 文档分片列表，顺序与原文相同
      */
     public List<DocumentChunk> chunkDocument(String content, String filePath) {
         List<DocumentChunk> chunks = new ArrayList<>();
@@ -41,11 +54,11 @@ public class DocumentChunkService {
         }
 
         // 1. 首先尝试按标题分割（Markdown格式）
-        List<Section> sections = splitByHeadings(content);
+        List<DocumentSection> sections = splitByHeadings(content);
         
         // 2. 对每个章节进行进一步分片
         int globalChunkIndex = 0;
-        for (Section section : sections) {
+        for (DocumentSection section : sections) {
             List<DocumentChunk> sectionChunks = chunkSection(section, globalChunkIndex);
             chunks.addAll(sectionChunks);
             globalChunkIndex += sectionChunks.size();
@@ -56,10 +69,12 @@ public class DocumentChunkService {
     }
 
     /**
-     * 按照 Markdown 标题分割文档
+     * 按照 Markdown 标题分割文档。
+     *
+     * <p>正则匹配 #、##、### 等标题，并将标题上下文块作为独立章节返回；若未匹配到标题则整体作为单一章节。</p>
      */
-    private List<Section> splitByHeadings(String content) {
-        List<Section> sections = new ArrayList<>();
+    private List<DocumentSection> splitByHeadings(String content) {
+        List<DocumentSection> sections = new ArrayList<>();
         
         // 匹配 Markdown 标题：# 标题, ## 标题, ### 标题等
         Pattern headingPattern = Pattern.compile("^(#{1,6})\\s+(.+)$", Pattern.MULTILINE);
@@ -73,7 +88,7 @@ public class DocumentChunkService {
             if (lastEnd < matcher.start()) {
                 String sectionContent = content.substring(lastEnd, matcher.start()).trim();
                 if (!sectionContent.isEmpty()) {
-                    sections.add(new Section(currentTitle, sectionContent, lastEnd));
+                    sections.add(new DocumentSection(currentTitle, sectionContent, lastEnd));
                 }
             }
 
@@ -86,32 +101,34 @@ public class DocumentChunkService {
         if (lastEnd < content.length()) {
             String sectionContent = content.substring(lastEnd).trim();
             if (!sectionContent.isEmpty()) {
-                sections.add(new Section(currentTitle, sectionContent, lastEnd));
+                sections.add(new DocumentSection(currentTitle, sectionContent, lastEnd));
             }
         }
 
         // 如果没有找到任何标题，将整个文档作为一个章节
         if (sections.isEmpty()) {
-            sections.add(new Section(null, content, 0));
+            sections.add(new DocumentSection(null, content, 0));
         }
 
         return sections;
     }
 
     /**
-     * 对单个章节进行分片
+     * 对单个章节进行分片。
+     *
+     * <p>若章节长度小于配置的最大分片尺寸，则作为单个分片；否则按段落分割并在分片之间保留 overlap 以保证片段间上下文连贯性。</p>
      */
-    private List<DocumentChunk> chunkSection(Section section, int startChunkIndex) {
+    private List<DocumentChunk> chunkSection(DocumentSection section, int startChunkIndex) {
         List<DocumentChunk> chunks = new ArrayList<>();
-        String content = section.content;
-        String title = section.title;
+        String content = section.getContent();
+        String title = section.getTitle();
 
         // 如果章节内容小于最大尺寸，直接作为一个分片
         if (content.length() <= chunkConfig.getMaxSize()) {
             DocumentChunk chunk = new DocumentChunk(
                 content, 
-                section.startIndex, 
-                section.startIndex + content.length(), 
+                section.getStartIndex(), 
+                section.getStartIndex() + content.length(), 
                 startChunkIndex
             );
             chunk.setTitle(title);
@@ -124,7 +141,7 @@ public class DocumentChunkService {
         List<String> paragraphs = splitByParagraphs(content);
         
         StringBuilder currentChunk = new StringBuilder();
-        int currentStartIndex = section.startIndex;
+        int currentStartIndex = section.getStartIndex();
         int chunkIndex = startChunkIndex;
 
         for (String paragraph : paragraphs) {
@@ -169,7 +186,7 @@ public class DocumentChunkService {
     }
 
     /**
-     * 按段落分割文本
+     * 按段落分割文本（以双换行作为段落分隔符）。
      */
     private List<String> splitByParagraphs(String content) {
         List<String> paragraphs = new ArrayList<>();
@@ -187,8 +204,9 @@ public class DocumentChunkService {
     }
 
     /**
-     * 获取重叠文本
-     * 从文本末尾提取指定长度的内容作为下一个分片的开头
+     * 获取重叠文本，从文本末尾提取指定长度用于下一个分片的开头。
+     *
+     * <p>为了提升上下文完整性，优先在句子结尾处截断（例如中文句号、问号、感叹号），以避免断句导致语义不连贯。</p>
      */
     private String getOverlapText(String text) {
         int overlapSize = Math.min(chunkConfig.getOverlap(), text.length());
@@ -215,15 +233,4 @@ public class DocumentChunkService {
     /**
      * 章节数据类
      */
-    private static class Section {
-        String title;
-        String content;
-        int startIndex;
-
-        Section(String title, String content, int startIndex) {
-            this.title = title;
-            this.content = content;
-            this.startIndex = startIndex;
-        }
-    }
 }

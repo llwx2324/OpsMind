@@ -1,11 +1,13 @@
 package org.example.agent.tool;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Data;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.example.domain.po.PrometheusAlert;
+import org.example.domain.po.PrometheusAlertsResult;
+import org.example.domain.vo.PrometheusAlertsOutput;
+import org.example.domain.vo.SimplifiedAlert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -171,7 +173,13 @@ public class QueryMetricsTools {
     }
     
     /**
-     * 从 Prometheus API 获取告警数据
+     * 从 Prometheus API 获取告警数据。
+     *
+     * <p>该方法封装对 /api/v1/alerts 的调用，并将返回结果反序列化为 {@link PrometheusAlertsResult}。
+     * 若响应体为空或 HTTP 状态异常，则抛出异常交由上层统一处理。</p>
+     *
+     * @return Prometheus 告警查询结果
+     * @throws Exception 当 HTTP 请求失败或响应解析失败时抛出
      */
     private PrometheusAlertsResult fetchPrometheusAlerts() throws Exception {
         String apiUrl = prometheusBaseUrl + "/api/v1/alerts";
@@ -186,14 +194,21 @@ public class QueryMetricsTools {
             if (!response.isSuccessful()) {
                 throw new RuntimeException("HTTP 请求失败: " + response.code());
             }
-            
+
+            if (response.body() == null) {
+                throw new RuntimeException("Prometheus API 返回空响应体");
+            }
+
             String responseBody = response.body().string();
             return objectMapper.readValue(responseBody, PrometheusAlertsResult.class);
         }
     }
     
     /**
-     * 计算从 activeAt 到现在的持续时间
+     * 计算从 activeAt 到现在的持续时间。
+     *
+     * @param activeAtStr 告警激活时间字符串，需符合 Instant.parse 格式
+     * @return 格式化后的持续时间，例如 1h2m3s；解析失败返回 unknown
      */
     private String calculateDuration(String activeAtStr) {
         try {
@@ -218,7 +233,11 @@ public class QueryMetricsTools {
     }
     
     /**
-     * 构建错误响应
+     * 构建错误响应。
+     *
+     * @param message 错误消息
+     * @param error   详细错误信息
+     * @return JSON 字符串形式的错误响应
      */
     private String buildErrorResponse(String message, String error) {
         try {
@@ -232,72 +251,5 @@ public class QueryMetricsTools {
         }
     }
     
-    // ==================== 数据模型 ====================
-    
-    /**
-     * Prometheus 告警信息结构
-     */
-    @Data
-    public static class PrometheusAlert {
-        private Map<String, String> labels;
-        private Map<String, String> annotations;
-        private String state;
-        private String activeAt;
-        private String value;
-    }
-    
-    /**
-     * Prometheus 告警查询结果
-     */
-    @Data
-    public static class PrometheusAlertsResult {
-        private String status;
-        private AlertsData data;
-        private String error;
-        private String errorType;
-    }
-    
-    @Data
-    public static class AlertsData {
-        private List<PrometheusAlert> alerts = new ArrayList<>();
-    }
-    
-    /**
-     * 简化的告警信息
-     */
-    @Data
-    public static class SimplifiedAlert {
-        @JsonProperty("alert_name")
-        private String alertName;
-        
-        @JsonProperty("description")
-        private String description;
-        
-        @JsonProperty("state")
-        private String state;
-        
-        @JsonProperty("active_at")
-        private String activeAt;
-        
-        @JsonProperty("duration")
-        private String duration;
-    }
-    
-    /**
-     * 告警查询输出
-     */
-    @Data
-    public static class PrometheusAlertsOutput {
-        @JsonProperty("success")
-        private boolean success;
-        
-        @JsonProperty("alerts")
-        private List<SimplifiedAlert> alerts;
-        
-        @JsonProperty("message")
-        private String message;
-        
-        @JsonProperty("error")
-        private String error;
-    }
+    // 数据模型已抽取到 `org.example.domain.po` / `org.example.domain.vo`，此处仅保留工具逻辑。
 }

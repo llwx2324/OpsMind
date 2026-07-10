@@ -1,6 +1,7 @@
 package org.example.agent.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.example.domain.vo.SearchResult;
 import org.example.service.VectorSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,11 +31,8 @@ public class InternalDocsTools {
     private int topK = 3; // 默认值
     
     private final ObjectMapper objectMapper = new ObjectMapper();
-    
-    /**
-     * 构造函数注入依赖
-     * Spring 会自动注入 VectorSearchService
-     */
+
+
     @Autowired
     public InternalDocsTools(VectorSearchService vectorSearchService) {
         this.vectorSearchService = vectorSearchService;
@@ -57,7 +55,7 @@ public class InternalDocsTools {
 
         try {
             // 使用向量搜索服务检索相关文档
-            List<VectorSearchService.SearchResult> searchResults = 
+            List<SearchResult> searchResults = 
                     vectorSearchService.searchSimilarDocuments(query, topK);
             
             if (searchResults.isEmpty()) {

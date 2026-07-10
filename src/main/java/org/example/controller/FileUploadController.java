@@ -1,7 +1,8 @@
 package org.example.controller;
 
 import org.example.config.FileUploadConfig;
-import org.example.dto.FileUploadRes;
+import org.example.domain.vo.ApiResponse;
+import org.example.domain.vo.FileUploadRes;
 import org.example.service.VectorIndexService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,12 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * 文件上传控制器。
+ *
+ * <p>负责接收前端上传的文档文件、保存到配置目录，并在上传成功后同步触发文件向量化入库流程。
+ * 该控制器是文档接入链路的入口之一，连接文件存储与 Milvus 向量化入库服务。</p>
+ */
 @RestController
 public class FileUploadController {
 
@@ -31,6 +38,20 @@ public class FileUploadController {
     @Autowired
     private VectorIndexService vectorIndexService;
 
+    /**
+     * 文件上传并同步触发向量化入库。
+     *
+     * <p>流程：
+     * <ol>
+     *   <li>校验文件与后缀</li>
+     *   <li>保存到配置目录（覆盖同名文件）</li>
+     *   <li>同步触发该文件的向量化入库（入库失败时仅记录日志，不回滚上传）</li>
+     * </ol>
+     * </p>
+     *
+     * @param file Multipart 文件参数
+     * @return 上传结果的 ApiResponse，包含文件元信息或错误信息
+     */
     @PostMapping(value = "/api/upload", consumes = "multipart/form-data")
     public ResponseEntity<?> upload(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
@@ -55,28 +76,23 @@ public class FileUploadController {
                 Files.createDirectories(uploadDir);
             }
 
-            // 使用原始文件名，而不是UUID，以便实现基于文件名的去重
             Path filePath = uploadDir.resolve(originalFilename).normalize();
-            
-            // 如果文件已存在，先删除旧文件（实现覆盖更新）
             if (Files.exists(filePath)) {
                 logger.info("文件已存在，将覆盖: {}", filePath);
                 Files.delete(filePath);
             }
-            
-            Files.copy(file.getInputStream(), filePath);
 
+            Files.copy(file.getInputStream(), filePath);
             logger.info("文件上传成功: {}", filePath);
 
-            // 文件上传成功后，自动调用向量索引服务
             try {
-                logger.info("开始为上传文件创建向量索引: {}", filePath);
+                logger.info("开始执行上传文件的向量化入库: {}", filePath);
+                // 注意：向量化入库可能耗时，当前为同步调用。若并发或大文件频繁上传，建议改为异步任务队列。
                 vectorIndexService.indexSingleFile(filePath.toString());
-                logger.info("向量索引创建成功: {}", filePath);
+                logger.info("上传文件向量化入库成功: {}", filePath);
             } catch (Exception e) {
-                logger.error("向量索引创建失败: {}, 错误: {}", filePath, e.getMessage(), e);
-                // 注意：即使索引失败，文件上传仍然成功，只是记录错误日志
-                // 可以根据业务需求决定是否要删除文件或返回错误
+                // 向量化入库失败不影响文件上传，记录错误便于人工排查
+                logger.error("上传文件向量化入库失败: {}, 错误: {}", filePath, e.getMessage(), e);
             }
 
             FileUploadRes response = new FileUploadRes(
@@ -85,56 +101,16 @@ public class FileUploadController {
                     file.getSize()
             );
 
-            // 使用统一的API响应格式
-            ApiResponse<FileUploadRes> apiResponse = new ApiResponse<>();
-            apiResponse.setCode(200);
-            apiResponse.setMessage("success");
-            apiResponse.setData(response);
-            
-            return ResponseEntity.ok(apiResponse);
-
+            return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IOException e) {
-            ApiResponse<String> errorResponse = new ApiResponse<>();
-            errorResponse.setCode(500);
-            errorResponse.setMessage("文件上传失败: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(errorResponse);
+                    .body(ApiResponse.error("文件上传失败: " + e.getMessage()));
         }
     }
 
     /**
-     * 统一 API 响应格式
+     * 获取文件扩展名（不含点），若无扩展名返回空字符串。
      */
-    public static class ApiResponse<T> {
-        private int code;
-        private String message;
-        private T data;
-
-        public int getCode() {
-            return code;
-        }
-
-        public void setCode(int code) {
-            this.code = code;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public void setMessage(String message) {
-            this.message = message;
-        }
-
-        public T getData() {
-            return data;
-        }
-
-        public void setData(T data) {
-            this.data = data;
-        }
-    }
-
     private String getFileExtension(String filename) {
         int lastIndexOf = filename.lastIndexOf(".");
         if (lastIndexOf == -1) {
@@ -143,6 +119,9 @@ public class FileUploadController {
         return filename.substring(lastIndexOf + 1).toLowerCase();
     }
 
+    /**
+     * 校验扩展名是否在允许列表中。
+     */
     private boolean isAllowedExtension(String extension) {
         String allowedExtensions = fileUploadConfig.getAllowedExtensions();
         if (allowedExtensions == null || allowedExtensions.isEmpty()) {

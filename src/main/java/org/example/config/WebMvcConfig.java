@@ -6,8 +6,10 @@ import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Web MVC 配置
- * 配置跨域和静态资源
+ * Web MVC 配置。
+ *
+ * <p>配置全局 CORS 规则与静态资源映射。当前示例允许所有来源（allowedOrigins="*"），
+ * 在生产环境中应根据安全策略限制为可信域名列表。</p>
  */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {

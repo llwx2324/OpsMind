@@ -2,6 +2,7 @@ package org.example.service;
 
 import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
+import org.example.domain.po.ChatMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -41,6 +42,20 @@ class ChatServiceTest {
         String systemPrompt = chatService.buildSystemPrompt(List.of());
 
         assertThat(systemPrompt).contains("OpsMind 智能运维助手");
+    }
+
+    @Test
+    void systemPromptIncludesTypedChatHistory() {
+        ChatService chatService = new ChatService();
+
+        String systemPrompt = chatService.buildSystemPrompt(List.of(
+                ChatMessage.user("CPU 告警怎么处理"),
+                ChatMessage.assistant("先确认负载来源")
+        ));
+
+        assertThat(systemPrompt)
+                .contains("CPU 告警怎么处理")
+                .contains("先确认负载来源");
     }
 
     private static void setField(Object target, String fieldName, Object value) throws Exception {

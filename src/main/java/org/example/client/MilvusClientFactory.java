@@ -19,8 +19,10 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Milvus 客户端工厂类
- * 负责创建和初始化 Milvus 客户端连接
+ * Milvus 客户端工厂类。
+ *
+ * <p>负责创建并初始化与 Milvus 的连接、检查并创建业务 collection 以及为 vector 字段创建索引结构。
+ * 该类在应用启动时用于确保 Milvus 环境就绪。</p>
  */
 @Component
 public class MilvusClientFactory {
@@ -29,6 +31,16 @@ public class MilvusClientFactory {
 
     @Autowired
     private MilvusProperties milvusProperties;
+
+    /**
+     * 创建并初始化 Milvus 客户端。
+     *
+     * <p>行为：建立连接 → 检查 collection 是否存在 → 若不存在则创建 collection 与 vector 字段索引结构。
+     * 若任何步骤失败会关闭客户端并抛出运行时异常以阻止应用继续运行。</p>
+     *
+     * @return 已初始化的 MilvusServiceClient
+     * @throws RuntimeException 当连接或初始化失败时抛出
+     */
 
     /**
      * 创建并初始化 Milvus 客户端
@@ -53,9 +65,9 @@ public class MilvusClientFactory {
                 createBizCollection(client);
                 logger.info("成功创建 collection '{}'", MilvusConstants.MILVUS_COLLECTION_NAME);
                 
-                // 创建索引
+                // 创建 vector 字段索引结构
                 createIndexes(client);
-                logger.info("成功创建索引");
+                logger.info("成功创建 vector 字段索引结构");
             } else {
                 logger.info("collection '{}' 已存在", MilvusConstants.MILVUS_COLLECTION_NAME);
             }
@@ -156,7 +168,7 @@ public class MilvusClientFactory {
     }
 
     /**
-     * 为 collection 创建索引
+     * 为 collection 创建 vector 字段索引结构。
      */
     private void createIndexes(MilvusServiceClient client) {
         // 为 vector 字段创建索引（FloatVector 使用 IVF_FLAT 和 L2 距离）
@@ -171,9 +183,9 @@ public class MilvusClientFactory {
 
         R<RpcStatus> response = client.createIndex(vectorIndexParam);
         if (response.getStatus() != 0) {
-            throw new RuntimeException("创建 vector 索引失败: " + response.getMessage());
+            throw new RuntimeException("创建 vector 字段索引结构失败: " + response.getMessage());
         }
         
-        logger.info("成功为 vector 字段创建索引");
+        logger.info("成功为 vector 字段创建索引结构");
     }
 }
