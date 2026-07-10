@@ -54,3 +54,7 @@ uploads/
 ### docker
 /volumes
 /server.pid
+
+### Project Documentation (local only) ###
+/主要业务链路解读/
+/PRODUCTION_READINESS_ASSESSMENT.md
