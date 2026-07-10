@@ -55,6 +55,9 @@ public class ChatService {
     @Autowired(required = false)
     private QueryLogsTools queryLogsTools;
 
+    @Value("${cls.mock-enabled:false}")
+    private boolean clsMockEnabled;
+
     /**
      * MCP 提供的工具回调提供者；在未启用 MCP 时可能为 null。
      */
@@ -155,7 +158,7 @@ public class ChatService {
      * @return 方法工具对象数组，供 ReactAgent.methodTools 使用
      */
     public Object[] buildMethodToolsArray() {
-        if (queryLogsTools != null) {
+        if (clsMockEnabled && queryLogsTools != null) {
             // Mock 模式：包含 QueryLogsTools
             return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools};
         } else {

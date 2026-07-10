@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -39,6 +40,9 @@ public class AiOpsService {
 
     @Autowired(required = false)  // Mock 模式下才注册
     private QueryLogsTools queryLogsTools;
+
+    @Value("${cls.mock-enabled:false}")
+    private boolean clsMockEnabled;
 
     /**
      * 执行 AI Ops 告警分析流程
@@ -131,7 +135,7 @@ public class AiOpsService {
      * 根据 cls.mock-enabled 决定是否包含 QueryLogsTools
      */
     private Object[] buildMethodToolsArray() {
-        if (queryLogsTools != null) {
+        if (clsMockEnabled && queryLogsTools != null) {
             // Mock 模式：包含 QueryLogsTools
             return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools};
         } else {

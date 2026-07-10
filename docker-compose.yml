@@ -83,6 +83,22 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--web.enable-lifecycle"
 
+  cls-mcp:
+    container_name: opsmind-cls-mcp
+    image: node:22-alpine
+    command: ["npx", "-y", "cls-mcp-server@latest"]
+    environment:
+      TRANSPORT: sse
+      PORT: 3000
+      TZ: ${TZ:-Asia/Shanghai}
+      MAX_LENGTH: ${CLS_MCP_MAX_LENGTH:-12000}
+      TENCENTCLOUD_SECRET_ID: ${TENCENTCLOUD_SECRET_ID:?TENCENTCLOUD_SECRET_ID is required}
+      TENCENTCLOUD_SECRET_KEY: ${TENCENTCLOUD_SECRET_KEY:?TENCENTCLOUD_SECRET_KEY is required}
+      TENCENTCLOUD_API_BASE_HOST: ${TENCENTCLOUD_API_BASE_HOST:-tencentcloudapi.com}
+    ports:
+      - "${CLS_MCP_PORT:-3000}:3000"
+    restart: unless-stopped
+
 networks:
   default:
     name: opsmind

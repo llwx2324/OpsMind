@@ -139,6 +139,21 @@ document:
 export DASHSCOPE_API_KEY=your-api-key
 ```
 
+### 腾讯云 CLS MCP（生产日志查询）
+
+OpsMind 通过 Spring AI MCP Client 连接独立部署的官方 `cls-mcp-server`。Docker Compose 会以 SSE 模式提供 `http://localhost:3000/sse`，避免 stdio 标准输出被启动日志污染，并兼容当前 Spring AI MCP Client。
+
+```bash
+export CLS_MCP_ENABLED=true
+export CLS_MOCK_ENABLED=false
+export TENCENTCLOUD_SECRET_ID=<CLS 子账号 SecretId>
+export TENCENTCLOUD_SECRET_KEY=<CLS 子账号 SecretKey>
+# 仅腾讯云 VPC 内运行时设置
+export TENCENTCLOUD_API_BASE_HOST=internal.tencentcloudapi.com
+```
+
+先执行 `docker compose up -d cls-mcp`，再启动 OpsMind。密钥应使用具有 CLS 最小只读权限的 CAM 子账号，且绝不能提交到仓库。Windows PowerShell 中请使用 `$env:CLS_MCP_ENABLED = 'true'` 的形式设置环境变量。
+
 
 ## 🚀 快速开始
 
