@@ -1,12 +1,14 @@
 // OpsMind 前端应用
 class OpsMindApp {
     constructor() {
-        this.apiBaseUrl = 'http://localhost:9900/api';
+        this.apiBaseUrl = `${window.location.origin}/api`;
+        this.apiFetch = window.OpsMindAuth ? window.OpsMindAuth.fetch : window.fetch.bind(window);
         this.currentMode = 'quick'; // 'quick' 或 'stream'
         this.sessionId = this.generateSessionId();
+        this.isBackendSession = false;
         this.isStreaming = false;
         this.currentChatHistory = []; // 当前对话的消息历史
-        this.chatHistories = this.loadChatHistories(); // 所有历史对话
+        this.chatHistories = []; // 后端会话列表的本地渲染缓存
         this.isCurrentChatFromHistory = false; // 标记当前对话是否是从历史记录加载的
         
         this.initializeElements();
@@ -265,6 +267,7 @@ class OpsMindApp {
         
         // 生成新的会话ID
         this.sessionId = this.generateSessionId();
+        this.isBackendSession = false;
         
         // 重置模式为快速
         this.currentMode = 'quick';
@@ -355,22 +358,30 @@ class OpsMindApp {
     
     // 加载历史对话列表
     loadChatHistories() {
-        try {
-            const stored = localStorage.getItem('chatHistories');
-            return stored ? JSON.parse(stored) : [];
-        } catch (e) {
-            console.error('加载历史对话失败:', e);
-            return [];
-        }
+        return [];
     }
     
     // 保存历史对话列表到localStorage
     saveChatHistories() {
-        try {
-            localStorage.setItem('chatHistories', JSON.stringify(this.chatHistories));
-        } catch (e) {
-            console.error('保存历史对话失败:', e);
-        }
+        // 会话事实来源为后端；浏览器不再持久化聊天原文。
+    }
+
+    async refreshBackendSessions() {
+        const response = await this.apiFetch(`${this.apiBaseUrl}/v2/chat/sessions?limit=50`);
+        if (!response.ok) throw new Error(`加载会话列表失败: ${response.status}`);
+        const payload = await response.json();
+        this.chatHistories = (payload.data || []).map(session => ({
+            id: session.id,
+            title: session.title || '新对话',
+            messages: [],
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt
+        }));
+        this.renderChatHistory();
+    }
+
+    async initializeBackendSessions() {
+        await this.refreshBackendSessions();
     }
     
     // 渲染历史对话列表
@@ -420,7 +431,7 @@ class OpsMindApp {
     }
     
     // 加载历史对话
-    loadChatHistory(historyId) {
+    async loadChatHistory(historyId) {
         const history = this.chatHistories.find(h => h.id === historyId);
         if (!history) {
             return;
@@ -437,15 +448,22 @@ class OpsMindApp {
             }
         }
         
-        // 加载历史对话
+        const response = await this.apiFetch(`${this.apiBaseUrl}/v2/chat/sessions/${encodeURIComponent(historyId)}/messages`);
+        if (!response.ok) throw new Error(`加载会话消息失败: ${response.status}`);
+        const payload = await response.json();
+        const completed = (payload.data || []).filter(message => message.status === 'COMPLETED');
+
+        // 加载后端历史对话
         this.sessionId = history.id;
-        this.currentChatHistory = [...history.messages];
+        this.isBackendSession = true;
+        this.currentChatHistory = completed.map(message => ({ type: message.role, content: message.content, timestamp: message.createdAt }));
+        history.messages = [...this.currentChatHistory];
         this.isCurrentChatFromHistory = true; // 标记为从历史记录加载
         
         // 清空并重新渲染消息
         if (this.chatMessages) {
             this.chatMessages.innerHTML = '';
-            history.messages.forEach(msg => {
+            this.currentChatHistory.forEach(msg => {
                 this.addMessage(msg.type, msg.content, false, false); // false表示不是流式，false表示不保存到历史（因为已经存在）
             });
         }
@@ -456,7 +474,9 @@ class OpsMindApp {
     }
     
     // 删除历史对话
-    deleteChatHistory(historyId) {
+    async deleteChatHistory(historyId) {
+        const response = await this.apiFetch(`${this.apiBaseUrl}/v2/chat/sessions/${encodeURIComponent(historyId)}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error(`删除会话失败: ${response.status}`);
         this.chatHistories = this.chatHistories.filter(h => h.id !== historyId);
         this.saveChatHistories();
         this.renderChatHistory();
@@ -468,6 +488,7 @@ class OpsMindApp {
                 this.chatMessages.innerHTML = '';
             }
             this.sessionId = this.generateSessionId();
+            this.isBackendSession = false;
             this.checkAndSetCentered();
         }
     }
@@ -549,6 +570,17 @@ class OpsMindApp {
         return 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
     }
 
+    async ensureServerSession() {
+        if (this.isBackendSession && this.sessionId) return;
+        const response = await this.apiFetch(`${this.apiBaseUrl}/v2/chat/sessions`, { method: 'POST' });
+        if (!response.ok) throw new Error(`创建会话失败: ${response.status}`);
+        const payload = await response.json();
+        const session = payload.data;
+        if (!session || !session.id) throw new Error('服务端未返回会话 ID');
+        this.sessionId = session.id;
+        this.isBackendSession = true;
+    }
+
     // 发送消息
     async sendMessage() {
         let message = '';
@@ -565,6 +597,8 @@ class OpsMindApp {
             this.showNotification('请等待当前对话完成', 'warning');
             return;
         }
+
+        await this.ensureServerSession();
 
         // 显示用户消息
         this.addMessage('user', message);
@@ -605,10 +639,11 @@ class OpsMindApp {
         const loadingMessage = this.addLoadingMessage('正在思考...');
         
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat`, {
+            const response = await this.apiFetch(`${this.apiBaseUrl}/v2/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Idempotency-Key': crypto.randomUUID(),
                 },
                 body: JSON.stringify({
                     Id: this.sessionId,
@@ -661,10 +696,11 @@ class OpsMindApp {
     // 发送流式消息
     async sendStreamMessage(message) {
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat_stream`, {
+            const response = await this.apiFetch(`${this.apiBaseUrl}/v2/chat/stream`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Idempotency-Key': crypto.randomUUID(),
                 },
                 body: JSON.stringify({
                     Id: this.sessionId,
@@ -963,7 +999,8 @@ class OpsMindApp {
             // 如果当前对话是从历史记录加载的，更新历史记录
             if (this.isCurrentChatFromHistory) {
                 this.updateCurrentChatHistory();
-                this.renderChatHistory();
+        this.renderChatHistory();
+        this.refreshBackendSessions().catch(error => console.error('刷新会话列表失败:', error));
             }
         }
     }
@@ -1544,6 +1581,12 @@ style.textContent = `
 document.head.appendChild(style);
 
 // 初始化应用
-document.addEventListener('DOMContentLoaded', () => {
-    new OpsMindApp();
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        if (window.OpsMindAuth) await window.OpsMindAuth.ready;
+        const app = new OpsMindApp();
+        await app.initializeBackendSessions();
+    } catch (error) {
+        document.body.innerHTML = `<main style="max-width:640px;margin:80px auto;font-family:system-ui"><h1>无法完成登录</h1><p>${String(error.message || error)}</p></main>`;
+    }
 });

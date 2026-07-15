@@ -1,7 +1,6 @@
 package org.example.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.StringHttpMessageConverter;
@@ -19,6 +18,15 @@ import java.util.List;
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
+    /** 复用 Spring Boot 统一配置的 ObjectMapper，保证缓存与 HTTP JSON 的时间格式一致。 */
+    private final ObjectMapper objectMapper;
+
+    /**
+     * @param objectMapper Spring Boot 管理的 JSON 序列化器
+     */
+    public WebConfig(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
@@ -27,14 +35,10 @@ public class WebConfig implements WebMvcConfigurer {
         stringConverter.setWriteAcceptCharset(false); // 不设置 Accept-Charset
         converters.add(0, stringConverter);
         
-        // 添加 Jackson JSON 转换器，确保 UTF-8 编码
-        MappingJackson2HttpMessageConverter jsonConverter = new MappingJackson2HttpMessageConverter();
+        // 复用容器中的 ObjectMapper，避免自行 new 实例丢失日期格式及其他全局配置。
+        MappingJackson2HttpMessageConverter jsonConverter = new MappingJackson2HttpMessageConverter(objectMapper);
         jsonConverter.setDefaultCharset(StandardCharsets.UTF_8);
         converters.add(1, jsonConverter);
     }
     
-    @Bean
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper();
-    }
 }

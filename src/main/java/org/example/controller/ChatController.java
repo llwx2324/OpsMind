@@ -76,10 +76,12 @@ public class ChatController {
      * <p>使用 DashScope 模型和 ReactAgent 执行一次完整的问答，会等待模型返回完整答案后再响应。
      * 适用于客户端需要完整回答后一次性渲染的场景。
      *
+     * <p>旧实现已迁移到不可访问的兼容命名空间，正式请求由持久化会话控制器处理。</p>
+     *
      * @param request 包含会话 id 与用户问题的请求对象（@see ChatRequest）
      * @return 包含模型回答的标准 ApiResponse（成功或错误信息封装在 ChatResponse 中）
      */
-    @PostMapping("/chat")
+    @PostMapping("/legacy-disabled/chat")
     public ResponseEntity<ApiResponse<ChatResponse>> chat(@RequestBody ChatRequest request) {
         try {
             logger.info("收到聊天请求 - 会话 ID：{}，问题：{}", request.getId(), request.getQuestion());
@@ -119,10 +121,12 @@ public class ChatController {
      * <p>根据请求中提供的会话 id 清空内存中的会话历史。该接口不删除会话对象本身，仅清除消息列表。
      * 当请求的 session id 为空或不存在时会返回相应的错误信息。
      *
+     * <p>旧实现已迁移到不可访问的兼容命名空间，避免绕过新版身份与所有权校验。</p>
+     *
      * @param request 包含要清理的 sessionId 的请求对象（@see ClearRequest）
      * @return 操作结果描述（成功或失败原因）
      */
-    @PostMapping("/chat/clear")
+    @PostMapping("/legacy-disabled/chat/clear")
     public ResponseEntity<ApiResponse<String>> clearChatHistory(@RequestBody ClearRequest request) {
         try {
             logger.info("收到清理聊天历史请求 - 会话 ID：{}", request.getId());
@@ -156,10 +160,12 @@ public class ChatController {
      *  - 若客户端或中间代理断开连接，SseEmitter 可能抛出异常，系统会在 catch 块中安静地完成（completeWithErrorQuietly）。
      *  - 本实现将会话保存在内存中（sessions），并在流完成后将完整答案追加到会话历史。
      *
+     * <p>旧实现已迁移到不可访问的兼容命名空间，正式 SSE 请求由新版持久化链路处理。</p>
+     *
      * @param request 包含会话 id 与用户问题的请求对象（@see ChatRequest）
      * @return SseEmitter 用于在同一 HTTP 连接上持续发送事件
      */
-    @PostMapping(value = "/chat_stream", produces = "text/event-stream;charset=UTF-8")
+    @PostMapping(value = "/legacy-disabled/chat_stream", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chatStream(@RequestBody ChatRequest request) {
         SseEmitter emitter = new SseEmitter(300000L);
 
@@ -315,10 +321,12 @@ public class ChatController {
      * <p>返回指定 sessionId 的元信息，包括创建时间和已保存的问答对数。该接口不会返回会话的完整消息内容
      *（仅用于展示会话概览）。
      *
+     * <p>旧实现已迁移到不可访问的兼容命名空间，防止读取未按用户隔离的内存会话。</p>
+     *
      * @param sessionId 会话唯一标识
      * @return 会话元信息或不存在提示
      */
-    @GetMapping("/chat/session/{sessionId}")
+    @GetMapping("/legacy-disabled/chat/session/{sessionId}")
     public ResponseEntity<ApiResponse<SessionInfoResponse>> getSessionInfo(@PathVariable String sessionId) {
         try {
             logger.info("收到获取会话信息请求 - 会话 ID：{}", sessionId);

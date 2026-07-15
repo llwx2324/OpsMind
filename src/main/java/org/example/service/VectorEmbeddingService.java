@@ -41,15 +41,12 @@ public class VectorEmbeddingService {
     public void init() {
         // 验证 API Key
         if (apiKey == null || apiKey.trim().isEmpty() || apiKey.equals("your-api-key-here")) {
-            logger.error("API Key 未正确配置！当前值: {}", apiKey);
+            logger.error("API Key 未正确配置");
             throw new IllegalStateException("请设置环境变量 DASHSCOPE_API_KEY 或在 application.yml 中配置正确的 API Key");
         }
         
-        // 打印 API Key 前缀用于调试（不打印完整 Key 保证安全）
-        String maskedKey = apiKey.length() > 8 ? 
-            apiKey.substring(0, 8) + "..." + apiKey.substring(apiKey.length() - 4) : 
-            "***";
-        logger.info("API Key 已加载: {}", maskedKey);
+        // 日志只确认配置状态，不输出完整密钥、前后缀或其他可用于识别密钥的片段。
+        logger.info("DashScope API Key 已加载");
         
         // 设置全局 API Key（确保设置成功）
         Constants.apiKey = apiKey;
@@ -60,7 +57,8 @@ public class VectorEmbeddingService {
             throw new IllegalStateException("API Key 设置到 Constants 失败");
         }
         
-        logger.info("Constants.apiKey 已设置: {}", Constants.apiKey.substring(0, Math.min(8, Constants.apiKey.length())) + "...");
+        // SDK 全局变量可能包含真实凭证，因此禁止把变量内容写入任何级别的日志。
+        logger.info("DashScope SDK API Key 已设置");
 
         // 创建 TextEmbedding 实例
         textEmbedding = new TextEmbedding();
@@ -92,8 +90,8 @@ public class VectorEmbeddingService {
                 Constants.apiKey = apiKey;
             }
             
-            logger.debug("调用 API 前 Constants.apiKey: {}", 
-                Constants.apiKey != null ? Constants.apiKey.substring(0, Math.min(8, Constants.apiKey.length())) + "..." : "null");
+            // 调试日志同样不得包含 Constants.apiKey 或掩码后的密钥片段。
+            logger.debug("调用 DashScope Embedding API");
 
             // 构建请求参数
             TextEmbeddingParam param = TextEmbeddingParam
@@ -122,6 +120,13 @@ public class VectorEmbeddingService {
         }
     }
 
+    /**
+     * 从 DashScope 响应中提取第一条文本向量，并将 Double 元素转换为 Float。
+     *
+     * @param result DashScope 文本向量接口返回结果
+     * @return 非空的单精度向量列表
+     * @throws RuntimeException 响应、向量集合为空或无法取得向量时抛出
+     */
     @NotNull
     private static List<Float> getFloats(TextEmbeddingResult result) {
         if (result == null || result.getOutput() == null || result.getOutput().getEmbeddings() == null) {

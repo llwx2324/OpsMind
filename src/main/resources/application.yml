@@ -21,12 +21,42 @@ milvus:
 
 # Spring AI Alibaba DashScope 配置
 spring:
+  jackson:
+    # API 与 Redis 缓存统一输出 ISO-8601 时间，避免前后端把 Instant 当作数字时间戳误读。
+    serialization:
+      write-dates-as-timestamps: false
+  security:
+    # Resource Server 根据 issuer 发现 JWK；业务层另外校验 audience 和租户声明。
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:}
+  datasource:
+    # MySQL 是会话、消息和记忆的事实数据源；Redis 内容丢失后可从这里重建。
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3307/opsmind?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USERNAME:opsmind}
+    password: ${MYSQL_PASSWORD:opsmind}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    # 表结构只由 Flyway 管理，Hibernate 启动时仅做一致性验证。
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    # 应用启动时执行版本化迁移，缓存失效不影响数据库结构和持久化数据。
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+  data:
+    redis:
+      # Redis 只承担上下文缓存与会话锁，不保存不可恢复的业务数据。
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}  # 从环境变量读取或使用默认值
       chat:
         options:
-          model: glm-5.1  # 对话 Agent / AIOps Agent 使用的大语言模型
+          model: glm-5.2  # 对话 Agent / AIOps Agent / 长期记忆使用的大语言模型
           timeout: 180000  # 超时时间180秒（3分钟）
       retry:
         max-attempts: 3  # 最大重试次数
@@ -66,7 +96,7 @@ document:
 # RAG 配置
 rag:
   top-k: 3  # 检索返回的最相似文档数量
-  model: "glm-5.1"  # 大语言模型名称
+  model: "glm-5.2"  # 大语言模型名称
 
 # Prometheus 配置
 prometheus:
@@ -78,3 +108,40 @@ prometheus:
 # CLS 云日志服务配置
 cls:
   mock-enabled: ${CLS_MOCK_ENABLED:false}
+
+opsmind:
+  security:
+    # 生产环境必须设置为 true，并提供 issuer-uri / audience。
+    enabled: ${OPSMIND_SECURITY_ENABLED:false}
+    issuer-uri: ${OIDC_ISSUER_URI:}
+    audience: ${OIDC_AUDIENCE:}
+    tenant-claim: ${OIDC_TENANT_CLAIM:tenant_id}
+    client-id: ${OIDC_CLIENT_ID:}
+    scopes: ${OIDC_SCOPES:openid profile}
+    # 仅用于 OPMIND_SECURITY_ENABLED=false 的本地开发，生产环境不得使用。
+    dev-tenant-id: ${OPSMIND_DEV_TENANT_ID:dev-tenant}
+    dev-user-id: ${OPSMIND_DEV_USER_ID:dev-user}
+  chat:
+    # 会话、原始消息、派生摘要和长期记忆采用同一保留周期。
+    retention-days: ${CHAT_RETENTION_DAYS:90}
+    context-window-tokens: ${CHAT_CONTEXT_WINDOW_TOKENS:32000}
+    max-output-tokens: ${CHAT_MAX_OUTPUT_TOKENS:2000}
+    safety-margin-tokens: ${CHAT_SAFETY_MARGIN_TOKENS:3000}
+    keep-recent-messages: ${CHAT_KEEP_RECENT_MESSAGES:12}
+    chars-per-token: ${CHAT_CHARS_PER_TOKEN:3.5}
+    long-memory:
+      # 默认关闭；开启前需确认脱敏记忆目录可发送给现有 LLM 服务。
+      enabled: ${LONG_MEMORY_ENABLED:false}
+      extraction-interval-pairs: ${LONG_MEMORY_EXTRACTION_INTERVAL:5}
+      selector-timeout-ms: ${LONG_MEMORY_SELECTOR_TIMEOUT_MS:2000}
+
+management:
+  # 仅暴露不包含 token、提示词和原始消息的健康状态与聚合指标。
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true

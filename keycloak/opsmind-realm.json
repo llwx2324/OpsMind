@@ -1,0 +1,76 @@
+{
+  "realm": "opsmind",
+  "enabled": true,
+  "displayName": "OpsMind Local",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "loginWithEmailAllowed": true,
+  "clients": [
+    {
+      "clientId": "opsmind-web",
+      "name": "OpsMind SPA",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:9900/*"],
+      "webOrigins": ["http://localhost:9900"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:9900/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "opsmind-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "opsmind-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice", "enabled": true, "emailVerified": true,
+      "firstName": "Alice", "lastName": "Tenant A", "email": "alice@example.local",
+      "attributes": {"tenant_id": ["tenant-a"]},
+      "credentials": [{"type": "password", "value": "Alice-local-123!", "temporary": false}]
+    },
+    {
+      "username": "bob", "enabled": true, "emailVerified": true,
+      "firstName": "Bob", "lastName": "Tenant B", "email": "bob@example.local",
+      "attributes": {"tenant_id": ["tenant-b"]},
+      "credentials": [{"type": "password", "value": "Bob-local-123!", "temporary": false}]
+    },
+    {
+      "username": "charlie", "enabled": true, "emailVerified": true,
+      "firstName": "Charlie", "lastName": "Tenant A", "email": "charlie@example.local",
+      "attributes": {"tenant_id": ["tenant-a"]},
+      "credentials": [{"type": "password", "value": "Charlie-local-123!", "temporary": false}]
+    }
+  ]
+}

@@ -1,6 +1,72 @@
 name: opsmind
 
 services:
+  # 会话、消息、摘要、长期记忆及提取任务的唯一持久化数据源。
+  mysql:
+    image: mysql:8.4
+    container_name: opsmind-mysql
+    environment:
+      MYSQL_DATABASE: opsmind
+      MYSQL_USER: opsmind
+      MYSQL_PASSWORD: opsmind
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uopsmind -popsmind"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # 仅保存可重建的会话上下文缓存和带租约的会话锁。
+  redis:
+    image: redis:7.4-alpine
+    container_name: opsmind-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # 本地 OIDC Provider，用于验证真实 JWT 登录与租户、用户隔离。
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.4
+    container_name: opsmind-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change-me-now}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      - ./keycloak/opsmind-realm.json:/opt/keycloak/data/import/opsmind-realm.json:ro
+      - ./keycloak/user-profile.json:/opt/keycloak/data/user-profile.json:ro
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/keycloak:/opt/keycloak/data
+    restart: unless-stopped
+
+  # Keycloak 启动后写入测试用户的 tenant_id 属性；任务执行完成即退出。
+  keycloak-config:
+    image: quay.io/keycloak/keycloak:26.6.4
+    container_name: opsmind-keycloak-config
+    entrypoint: ["/bin/bash", "/config/configure-keycloak"]
+    environment:
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change-me-now}
+    volumes:
+      - ./keycloak:/config:ro
+    depends_on:
+      - keycloak
+    restart: "no"
+
   etcd:
     container_name: milvus-etcd
     image: quay.io/coreos/etcd:v3.5.18

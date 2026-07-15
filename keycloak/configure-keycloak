@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+KCADM=/opt/keycloak/bin/kcadm.sh
+SERVER=http://keycloak:8080
+
+# 等待 Keycloak 管理接口就绪，容器重启期间不提前执行用户配置。
+until "$KCADM" config credentials --server "$SERVER" --realm master \
+  --user "$KEYCLOAK_ADMIN_USERNAME" --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1; do
+  sleep 3
+done
+
+"$KCADM" update users/profile -r opsmind -f /config/user-profile.json >/dev/null
+
+set_tenant() {
+  local username="$1"
+  local tenant="$2"
+  local user_id
+  user_id=$("$KCADM" get users -r opsmind -q "username=$username" --fields id | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' | head -n 1)
+  test -n "$user_id"
+  # tenant_id 会进入访问令牌，后端据此建立租户隔离边界。
+  "$KCADM" update "users/$user_id" -r opsmind -s "attributes.tenant_id=$tenant" >/dev/null
+}
+
+set_tenant alice tenant-a
+set_tenant bob tenant-b
+set_tenant charlie tenant-a
+
+echo "Keycloak realm configuration completed"
